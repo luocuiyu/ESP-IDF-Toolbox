@@ -128,7 +128,7 @@ interface Window {
     createComponent(projectPath: string, idfPath: string, name: string, buildDir?: string): Promise<boolean>;
     addComponentDependency(projectPath: string, idfPath: string, dependency: string, component?: string, buildDir?: string): Promise<boolean>;
     createProjectFromComponentExample(idfPath: string, example: string): Promise<string | null>;
-    addSupportFiles(projectPath: string, kind: "vscode" | "devcontainer"): Promise<string>;
+    addSupportFiles(projectPath: string, kind: "vscode" | "devcontainer", idfPath?: string): Promise<string>;
     installQemu(projectPath: string, idfPath: string): Promise<boolean>;
     openInstallManager(idfPath: string): Promise<boolean>;
     installAdf(projectPath: string, idfPath: string): Promise<boolean>;

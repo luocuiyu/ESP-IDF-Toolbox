@@ -43,6 +43,8 @@ export interface ProjectSettings {
 export interface AppSettings {
   lastProject: string;
   projects: Record<string, ProjectSettings>;
+  idfToolsPaths?: Record<string, string>;
+  manualIdfPaths?: string[];
 }
 
 export interface AddComponentDependencyRequest {

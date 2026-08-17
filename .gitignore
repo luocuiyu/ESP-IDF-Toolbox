@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-electron/
+release/
 .npm-cache/
 .layout-check-data/
 audit/
@@ -18,4 +19,3 @@ builder-debug.yml
 Thumbs.db
 .idea/
 .vscode/
-

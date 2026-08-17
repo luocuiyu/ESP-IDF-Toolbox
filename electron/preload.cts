@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld("idfApi", {
     const request: CreateProjectFromExampleRequest = { idfPath, example };
     return ipcRenderer.invoke("component:create-project-from-example", toCloneable(request));
   },
-  addSupportFiles: (projectPath: string, kind: "vscode" | "devcontainer") => ipcRenderer.invoke("project:add-support-files", projectPath, kind),
+  addSupportFiles: (projectPath: string, kind: "vscode" | "devcontainer", idfPath?: string) => ipcRenderer.invoke("project:add-support-files", projectPath, kind, idfPath),
   installQemu: (projectPath: string, idfPath: string) => ipcRenderer.invoke("tool:install-qemu", projectPath, idfPath),
   openInstallManager: (idfPath: string) => ipcRenderer.invoke("tool:install-manager", idfPath),
   installAdf: (projectPath: string, idfPath: string) => ipcRenderer.invoke("tool:install-adf", projectPath, idfPath),

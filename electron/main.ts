@@ -125,17 +125,46 @@ function settingsPath() {
   return path.join(app.getPath("userData"), "settings.json");
 }
 
+function normalizedFsKey(value: string) {
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function emptySettings(): AppSettings {
+  return { lastProject: "", projects: {}, idfToolsPaths: {}, manualIdfPaths: [] };
+}
+
 function loadSettings(): AppSettings {
   try {
-    return JSON.parse(readFileSync(settingsPath(), "utf8")) as AppSettings;
+    const parsed = JSON.parse(readFileSync(settingsPath(), "utf8")) as Partial<AppSettings>;
+    const projects = parsed.projects && typeof parsed.projects === "object" ? parsed.projects : {};
+    const idfToolsPaths = parsed.idfToolsPaths && typeof parsed.idfToolsPaths === "object" ? parsed.idfToolsPaths : {};
+    const manualIdfPaths = Array.isArray(parsed.manualIdfPaths)
+      ? parsed.manualIdfPaths.filter((item): item is string => typeof item === "string" && existsSync(item))
+      : [];
+    const lastProject = typeof parsed.lastProject === "string" && validateProject(parsed.lastProject) ? parsed.lastProject : "";
+    return { lastProject, projects, idfToolsPaths, manualIdfPaths };
   } catch {
-    return { lastProject: "", projects: {} };
+    return emptySettings();
   }
 }
 
 function saveSettings(settings: AppSettings) {
   mkdirSync(path.dirname(settingsPath()), { recursive: true });
   writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), "utf8");
+}
+
+function saveIdfToolsPath(idfPath: string, toolsPath: string) {
+  const settings = loadSettings();
+  settings.idfToolsPaths = { ...(settings.idfToolsPaths || {}), [normalizedFsKey(idfPath)]: path.resolve(toolsPath) };
+  settings.manualIdfPaths = [...new Set([...(settings.manualIdfPaths || []), path.resolve(idfPath)])];
+  saveSettings(settings);
+}
+
+function saveManualIdfPath(idfPath: string) {
+  const settings = loadSettings();
+  settings.manualIdfPaths = [...new Set([...(settings.manualIdfPaths || []), path.resolve(idfPath)])];
+  saveSettings(settings);
 }
 
 function readIdfVersion(idfPath: string, versionHint = ""): string {
@@ -165,6 +194,24 @@ function readIdfVersion(idfPath: string, versionHint = ""): string {
   return idfPath.match(/[\\/]v?(\d+\.\d+(?:\.\d+)?)(?:[\\/]|$)/i)?.[1] || "";
 }
 
+const validatedPythonEnvironments = new Set<string>();
+
+function pythonSupportsIdf(pythonPath: string, idfPath: string, compatibleVersion = "") {
+  const cacheKey = `${normalizedFsKey(pythonPath)}\0${normalizedFsKey(idfPath)}`;
+  if (validatedPythonEnvironments.has(cacheKey)) return true;
+  const result = spawnSync(pythonPath, [path.join(idfPath, "tools", "idf.py"), "--version"], {
+    cwd: idfPath,
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 10000
+  });
+  if (result.status !== 0) return false;
+  const reported = `${result.stdout || ""}\n${result.stderr || ""}`;
+  if (compatibleVersion && !reported.includes(compatibleVersion)) return false;
+  validatedPythonEnvironments.add(cacheKey);
+  return true;
+}
+
 function findPython(toolsPath: string, version: string, idfPath: string): string {
   const root = path.join(toolsPath, "python_env");
   if (!existsSync(root)) return "";
@@ -172,43 +219,91 @@ function findPython(toolsPath: string, version: string, idfPath: string): string
     .filter((entry) => entry.isDirectory())
     .map((entry) => ({
       name: entry.name,
-      pythonPath: path.join(root, entry.name, "Scripts", "python.exe")
+      pythonPath: process.platform === "win32"
+        ? path.join(root, entry.name, "Scripts", "python.exe")
+        : path.join(root, entry.name, "bin", "python")
     }))
     .filter((entry) => existsSync(entry.pythonPath));
   const compatibleVersion = version.match(/\d+\.\d+/)?.[0] || "";
   if (compatibleVersion) {
-    const exact = allCandidates.find((entry) => entry.name.toLowerCase().startsWith(`idf${compatibleVersion}_py`));
+    const exact = allCandidates.find((entry) => entry.name.toLowerCase().startsWith(`idf${compatibleVersion}_py`) && pythonSupportsIdf(entry.pythonPath, idfPath, compatibleVersion));
     if (exact) return exact.pythonPath;
   }
-  const idfPy = path.join(idfPath, "tools", "idf.py");
   for (const candidate of allCandidates) {
-    const result = spawnSync(candidate.pythonPath, [idfPy, "--version"], {
-      cwd: idfPath,
-      encoding: "utf8",
-      windowsHide: true,
-      timeout: 10000
-    });
-    if (result.status !== 0) continue;
-    const reported = `${result.stdout || ""}\n${result.stderr || ""}`;
-    if (!compatibleVersion || reported.includes(compatibleVersion)) return candidate.pythonPath;
+    if (pythonSupportsIdf(candidate.pythonPath, idfPath, compatibleVersion)) return candidate.pythonPath;
   }
   return "";
 }
 
-function inspectSetup(idfPath: string, versionHint = ""): IdfSetup {
-  const toolsPath = path.join(homedir(), ".espressif");
+function normalizeToolsRoot(value: string) {
+  let resolved = path.resolve(value);
+  if (path.basename(resolved).toLowerCase() === "python_env") resolved = path.dirname(resolved);
+  else if (path.basename(path.dirname(resolved)).toLowerCase() === "python_env") resolved = path.dirname(path.dirname(resolved));
+  return resolved;
+}
+
+function candidateToolsPaths(idfPath: string, explicitPath = "") {
+  const configured = loadSettings().idfToolsPaths?.[normalizedFsKey(idfPath)] || "";
+  const candidates = [explicitPath, configured, process.env.IDF_TOOLS_PATH || "", path.join(homedir(), ".espressif")];
+  let ancestor = path.resolve(idfPath);
+  for (let index = 0; index < 6; index += 1) {
+    candidates.push(ancestor);
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  const seen = new Set<string>();
+  return candidates
+    .filter(Boolean)
+    .map(normalizeToolsRoot)
+    .filter((candidate) => {
+      const key = normalizedFsKey(candidate);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function findActivatedPython(version: string, idfPath: string) {
+  const candidates = [
+    process.env.PYTHON || "",
+    process.env.VIRTUAL_ENV
+      ? path.join(process.env.VIRTUAL_ENV, process.platform === "win32" ? "Scripts/python.exe" : "bin/python")
+      : "",
+    findExecutable(process.env, process.platform === "win32" ? ["python"] : ["python3", "python"])
+  ].filter(Boolean);
+  const compatibleVersion = version.match(/\d+\.\d+/)?.[0] || "";
+  for (const pythonPath of [...new Set(candidates)]) {
+    if (!existsSync(pythonPath)) continue;
+    if (pythonSupportsIdf(pythonPath, idfPath, compatibleVersion)) return pythonPath;
+  }
+  return "";
+}
+
+function inspectSetup(idfPath: string, versionHint = "", toolsPathHint = ""): IdfSetup {
+  const resolvedIdfPath = path.resolve(idfPath);
   const version = readIdfVersion(idfPath, versionHint);
-  const pythonPath = findPython(toolsPath, version, idfPath);
+  const toolsCandidates = candidateToolsPaths(resolvedIdfPath, toolsPathHint);
+  let toolsPath = toolsCandidates[0] || path.join(homedir(), ".espressif");
+  let pythonPath = "";
+  for (const candidate of toolsCandidates) {
+    const found = findPython(candidate, version, resolvedIdfPath);
+    if (!found) continue;
+    toolsPath = candidate;
+    pythonPath = found;
+    break;
+  }
+  pythonPath ||= findActivatedPython(version, resolvedIdfPath);
   const required: Array<[string, string]> = [
-    ["idf.py", path.join(idfPath, "tools", "idf.py")],
-    ["idf_tools.py", path.join(idfPath, "tools", "idf_tools.py")],
+    ["idf.py", path.join(resolvedIdfPath, "tools", "idf.py")],
+    ["idf_tools.py", path.join(resolvedIdfPath, "tools", "idf_tools.py")],
     ["Python 虚拟环境", pythonPath]
   ];
   const missing = required.filter(([, value]) => !value || !existsSync(value)).map(([name]) => name);
   return {
-    id: idfPath.toLowerCase(),
+    id: normalizedFsKey(resolvedIdfPath),
     version: version || "未知",
-    idfPath,
+    idfPath: resolvedIdfPath,
     toolsPath,
     pythonPath,
     valid: missing.length === 0,
@@ -218,7 +313,8 @@ function inspectSetup(idfPath: string, versionHint = ""): IdfSetup {
 
 function discoverSetups(): IdfSetup[] {
   const found = new Map<string, IdfSetup>();
-  const files = [path.join(homedir(), ".espressif", "idf-env.json"), path.join(homedir(), ".espressif", "esp_idf.json")];
+  const registryRoots = [...new Set([process.env.IDF_TOOLS_PATH || "", path.join(homedir(), ".espressif")].filter(Boolean).map(normalizeToolsRoot))];
+  const files = registryRoots.flatMap((root) => [path.join(root, "idf-env.json"), path.join(root, "esp_idf.json")]);
   for (const file of files) {
     if (!existsSync(file)) continue;
     try {
@@ -226,7 +322,7 @@ function discoverSetups(): IdfSetup[] {
       const installed = data.idfInstalled || {};
       for (const item of Object.values(installed) as Array<{ path?: string; version?: string }>) {
         if (!item.path || !existsSync(item.path)) continue;
-        const setup = inspectSetup(path.resolve(item.path), item.version || "");
+        const setup = inspectSetup(path.resolve(item.path), item.version || "", typeof data.idfToolsPath === "string" ? data.idfToolsPath : path.dirname(file));
         found.set(setup.id, setup);
       }
     } catch {
@@ -236,6 +332,11 @@ function discoverSetups(): IdfSetup[] {
   const environmentIdfPath = process.env.IDF_PATH;
   if (environmentIdfPath && existsSync(environmentIdfPath)) {
     const setup = inspectSetup(path.resolve(environmentIdfPath));
+    found.set(setup.id, setup);
+  }
+  for (const manualIdfPath of loadSettings().manualIdfPaths || []) {
+    if (!existsSync(manualIdfPath)) continue;
+    const setup = inspectSetup(manualIdfPath);
     found.set(setup.id, setup);
   }
   return [...found.values()];
@@ -257,9 +358,9 @@ function buildEnvironment(setup: IdfSetup): NodeJS.ProcessEnv {
     const key = line.slice(0, separator);
     let value = line.slice(separator + 1);
     if (key.toUpperCase() === "PATH") {
-      const hasPlaceholder = /%PATH%/i.test(value);
-      value = value.replace(/%PATH%/gi, systemPath);
-      if (!hasPlaceholder && systemPath) value = `${value};${systemPath}`;
+      const hasPlaceholder = /%PATH%|\$\{?PATH\}?/i.test(value);
+      value = value.replace(/%PATH%|\$\{?PATH\}?/gi, systemPath);
+      if (!hasPlaceholder && systemPath) value = `${value}${path.delimiter}${systemPath}`;
       for (const existingKey of Object.keys(env)) {
         if (existingKey.toUpperCase() === "PATH") delete env[existingKey];
       }
@@ -943,8 +1044,9 @@ function runIdfTask(request: TaskRequest) {
   }
   if (request.action === "custom") {
     if (!request.customCommand?.trim()) throw new Error("自定义任务命令不能为空");
-    const commandProcessor = process.env.ComSpec || path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe");
-    steps.push({ executable: commandProcessor, args: ["/d", "/s", "/c", request.customCommand] });
+    const commandProcessor = process.platform === "win32" ? process.env.ComSpec || "cmd.exe" : process.env.SHELL || "/bin/sh";
+    const commandArgs = process.platform === "win32" ? ["/d", "/s", "/c", request.customCommand] : ["-lc", request.customCommand];
+    steps.push({ executable: commandProcessor, args: commandArgs });
   }
   if (!steps.length) throw new Error(`不支持的任务：${request.action}`);
   send("task:state", { running: true, action: request.action });
@@ -1052,8 +1154,7 @@ function listBuiltinJtagDevices(): JtagDevice[] {
 }
 
 function commandProcessorPath() {
-  const systemRoot = process.env.SystemRoot || process.env.WINDIR || "C:\\Windows";
-  return process.env.ComSpec && existsSync(process.env.ComSpec) ? process.env.ComSpec : path.join(systemRoot, "System32", "cmd.exe");
+  return process.env.ComSpec && existsSync(process.env.ComSpec) ? process.env.ComSpec : "cmd.exe";
 }
 
 async function openActivatedTerminal(setup: IdfSetup, projectPath: string, title: string, commands: string[] = [], closeAfter = false) {
@@ -1081,7 +1182,7 @@ async function openActivatedTerminal(setup: IdfSetup, projectPath: string, title
   return true;
 }
 
-function addProjectSupportFiles(projectPath: string, kind: "vscode" | "devcontainer") {
+function addProjectSupportFiles(projectPath: string, kind: "vscode" | "devcontainer", idfPath = "") {
   if (!validateProject(projectPath)) throw new Error("所选目录不是标准 ESP-IDF 工程");
   if (kind === "vscode") {
     const folder = path.join(projectPath, ".vscode");
@@ -1095,7 +1196,9 @@ function addProjectSupportFiles(projectPath: string, kind: "vscode" | "devcontai
   const folder = path.join(projectPath, ".devcontainer");
   mkdirSync(folder, { recursive: true });
   const file = path.join(folder, "devcontainer.json");
-  if (!existsSync(file)) writeFileSync(file, JSON.stringify({ name: "ESP-IDF", image: "espressif/idf:release-v5.5", runArgs: ["--privileged"], customizations: { vscode: { extensions: ["espressif.esp-idf-extension"] } } }, null, 2), "utf8");
+  const compatibleVersion = idfPath ? readIdfVersion(idfPath).match(/^\d+\.\d+/)?.[0] : "";
+  const image = compatibleVersion ? `espressif/idf:release-v${compatibleVersion}` : "espressif/idf:latest";
+  if (!existsSync(file)) writeFileSync(file, JSON.stringify({ name: "ESP-IDF", image, runArgs: ["--privileged"], customizations: { vscode: { extensions: ["espressif.esp-idf-extension"] } } }, null, 2), "utf8");
   return folder;
 }
 
@@ -1104,7 +1207,34 @@ function registerIpc() {
   trustedHandle("idf:choose", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "选择 ESP-IDF 根目录" });
     if (result.canceled || !result.filePaths[0]) return null;
-    return inspectSetup(result.filePaths[0]);
+    const idfPath = result.filePaths[0];
+    let setup = inspectSetup(idfPath);
+    const hasIdfSource = existsSync(path.join(idfPath, "tools", "idf.py"));
+    if (hasIdfSource) saveManualIdfPath(idfPath);
+    if (!setup.pythonPath && hasIdfSource) {
+      const answer = await dialog.showMessageBox(mainWindow!, {
+        type: "question",
+        title: "选择 ESP-IDF 工具目录",
+        message: "已找到 ESP-IDF 源码，但没有自动找到对应的 Python 环境。",
+        detail: "请选择包含 python_env 和 tools 子目录的 IDF_TOOLS_PATH（通常是用户目录下的 .espressif）。也可以暂时跳过，稍后重新选择。",
+        buttons: ["选择工具目录", "暂时跳过"],
+        defaultId: 0,
+        cancelId: 1
+      });
+      if (answer.response === 0) {
+        const tools = await dialog.showOpenDialog(mainWindow!, {
+          properties: ["openDirectory"],
+          title: "选择 IDF_TOOLS_PATH",
+          defaultPath: process.env.IDF_TOOLS_PATH || path.join(homedir(), ".espressif")
+        });
+        if (!tools.canceled && tools.filePaths[0]) {
+          const toolsPath = normalizeToolsRoot(tools.filePaths[0]);
+          saveIdfToolsPath(idfPath, toolsPath);
+          setup = inspectSetup(idfPath, "", toolsPath);
+        }
+      }
+    }
+    return setup;
   });
   trustedHandle("idf:targets", (_event, idfPath: string) => {
     const file = path.join(idfPath, "tools", "idf_py_actions", "constants.py");
@@ -1133,7 +1263,7 @@ function registerIpc() {
     return result.filePaths[0];
   });
   trustedHandle("project:examples", (_event, idfPath: string) => listExamples(idfPath));
-  trustedHandle("project:add-support-files", (_event, projectPath: string, kind: "vscode" | "devcontainer") => addProjectSupportFiles(projectPath, kind));
+  trustedHandle("project:add-support-files", (_event, projectPath: string, kind: "vscode" | "devcontainer", idfPath?: string) => addProjectSupportFiles(projectPath, kind, idfPath));
   trustedHandle("project:create-component", (_event, projectPath: string, idfPath: string, name: string, buildDir?: string) => {
     if (!/^[A-Za-z0-9_-]+$/.test(name)) throw new Error("组件名只能包含字母、数字、下划线和短横线");
     const setup = inspectSetup(idfPath);

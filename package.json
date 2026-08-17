@@ -1,6 +1,6 @@
 {
   "name": "idf-toolbox",
-  "version": "0.8.10",
+  "version": "0.8.11",
   "private": true,
   "description": "独立的 ESP-IDF 项目、构建、烧录与串口管理工具",
   "author": "luocuiyu",
@@ -42,7 +42,7 @@
     "appId": "local.idftoolbox.app",
     "productName": "ESP-IDF 工具箱",
     "directories": {
-      "output": "../../outputs"
+      "output": "release"
     },
     "files": [
       "dist/**/*",

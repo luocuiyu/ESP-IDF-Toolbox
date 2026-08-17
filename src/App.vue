@@ -114,7 +114,7 @@ const readyExtensionCommands = computed(() => supportedExtensionCommands.filter(
   return true;
 }));
 
-const selectedSetup = computed(() => setups.value.find((setup) => setup.idfPath === selectedIdfPath.value));
+const selectedSetup = computed(() => setupForPath(selectedIdfPath.value));
 const ready = computed(() => Boolean(selectedSetup.value?.valid && projectPath.value && !projectContextSwitching.value));
 const buildDir = computed(() => activeProfile.value === "default" ? "build" : `build-${activeProfile.value.replace(/[^A-Za-z0-9_-]/g, "-")}`);
 const kconfigRuntimeKey = computed(() => [projectPath.value, selectedIdfPath.value, buildDir.value, target.value].join("\u0000"));
@@ -272,7 +272,8 @@ async function playCompletionSound() {
 
 async function refreshIdf() {
   setups.value = await window.idfApi.discoverIdf();
-  if (!setups.value.some((setup) => setup.idfPath === selectedIdfPath.value)) selectedIdfPath.value = setups.value.find((setup) => setup.valid)?.idfPath || setups.value[0]?.idfPath || "";
+  const selected = setupForPath(selectedIdfPath.value);
+  selectedIdfPath.value = selected?.idfPath || setups.value.find((setup) => setup.valid)?.idfPath || setups.value[0]?.idfPath || "";
 }
 async function chooseIdf() {
   try {
@@ -283,8 +284,19 @@ async function chooseIdf() {
     selectedIdfPath.value = setup.idfPath;
   } catch (error) { showError(error); }
 }
+function portablePathKey(value: string) {
+  const normalized = value.replace(/[\\/]+$/, "").replace(/\\/g, "/");
+  return navigator.userAgent.toLowerCase().includes("windows") ? normalized.toLowerCase() : normalized;
+}
+
+function setupForPath(value: string) {
+  if (!value) return undefined;
+  const wanted = portablePathKey(value);
+  return setups.value.find((setup) => portablePathKey(setup.idfPath) === wanted);
+}
+
 function normalizedProjectKey(value: string) {
-  return value.replace(/[\\/]+$/, "").replace(/\\/g, "/").toLowerCase();
+  return portablePathKey(value);
 }
 
 function findProjectSettings(settings: Record<string, ProjectSettings>, selected: string) {
@@ -466,7 +478,8 @@ async function createProject() {
 
 function applyProjectSettings(settings?: ProjectSettings) {
   const next = settings || defaultProjectSettings();
-  if (next.idfPath) selectedIdfPath.value = next.idfPath;
+  const storedSetup = setupForPath(next.idfPath || "");
+  if (storedSetup?.valid) selectedIdfPath.value = storedSetup.idfPath;
   target.value = next.target || "esp32";
   flashPort.value = next.flashPort || next.port || "";
   monitorPort.value = next.monitorPort || next.port || next.flashPort || "";
@@ -478,7 +491,10 @@ function applyProjectSettings(settings?: ProjectSettings) {
   completionSound.value = next.completionSound ?? true;
   profiles.value = next.profiles?.length ? [...next.profiles] : ["default"];
   activeProfile.value = next.activeProfile && profiles.value.includes(next.activeProfile) ? next.activeProfile : "default";
-  openOcdConfig.value = next.openOcdConfig || `board/${target.value}-builtin.cfg`;
+  const storedOpenOcdConfig = next.openOcdConfig || "";
+  const environmentMoved = Boolean(next.idfPath) && !storedSetup?.valid;
+  const absoluteOpenOcdConfig = /^(?:[A-Za-z]:[\\/]|\/)/.test(storedOpenOcdConfig);
+  openOcdConfig.value = environmentMoved && absoluteOpenOcdConfig ? `board/${target.value}-builtin.cfg` : storedOpenOcdConfig || `board/${target.value}-builtin.cfg`;
   customTasks.value = (next.customTasks || []).map(({ name, command }) => ({ name, command }));
 }
 async function persist() {
@@ -501,8 +517,9 @@ async function persist() {
 async function refreshPorts() {
   try {
     ports.value = await window.idfApi.getPorts();
-    if (!flashPort.value && ports.value.length) flashPort.value = ports.value[0].path;
-    if (!monitorPort.value && ports.value.length) monitorPort.value = ports.value[0].path;
+    const available = new Set(ports.value.map((port) => port.path));
+    if (!available.has(flashPort.value)) flashPort.value = ports.value[0]?.path || "";
+    if (!available.has(monitorPort.value)) monitorPort.value = ports.value[0]?.path || "";
     status.value = `发现 ${ports.value.length} 个串口`;
   } catch (error) { showError(error); }
 }
@@ -861,6 +878,11 @@ async function handleCsvEditorMessage(message: Record<string, unknown>) {
     }
   } catch (error) { showError(error); }
 }
+function idfDocumentationUrl() {
+  const version = selectedSetup.value?.version || "";
+  const branch = /^\d+\.\d+(?:\.\d+)?$/.test(version) ? `v${version}` : "latest";
+  return `https://docs.espressif.com/projects/esp-idf/zh_CN/${branch}/`;
+}
 async function runExtensionCommand(command: string) {
   const taskMap: Record<string, TaskRequest["action"]> = {
     "espIdf.buildDevice": "build", "espIdf.buildApp": "app", "espIdf.buildBootloader": "bootloader", "espIdf.buildPartitionTable": "partition-table",
@@ -895,7 +917,7 @@ async function runExtensionCommand(command: string) {
       case "espIdf.customTask": advancedVisible.value = false; customTaskVisible.value = true; return;
       case "espIdf.qemuDebug": return void await openGdb();
       case "espIdf.projectConf": status.value = "工程配置位于主界面左侧的“工程配置”区域"; advancedVisible.value = false; return;
-      case "espIdf.searchInEspIdfDocs": case "espIdf.openDocUrl": return void await window.idfApi.openExternal("https://docs.espressif.com/projects/esp-idf/zh_CN/v5.5.4/");
+      case "espIdf.searchInEspIdfDocs": case "espIdf.openDocUrl": return void await window.idfApi.openExternal(idfDocumentationUrl());
       case "espIdf.openWalkthrough": case "espIdf.welcome.start": return void await window.idfApi.openExternal("https://github.com/espressif/vscode-esp-idf-extension/blob/master/docs/tutorial/basic_use.md");
       default: showError(`“${command}”依赖 VS Code 调试器、树视图、云登录或尚未安装的外部工具；功能入口已收录，后续将改写为桌面等价实现。`);
     }
@@ -1174,7 +1196,7 @@ async function switchSdkMode(mode: "graphical" | "raw") {
   sdkMode.value = mode;
 }
 async function createComponent() { const name = window.prompt("请输入组件名称"); if (!name) return; try { advancedVisible.value = false; await window.idfApi.createComponent(projectPath.value, selectedIdfPath.value, name, buildDir.value); } catch (error) { showError(error); } }
-async function addSupportFiles(kind: "vscode" | "devcontainer") { if (!window.confirm(`此操作会向工程添加 .${kind} 目录，是否继续？`)) return; try { const folder = await window.idfApi.addSupportFiles(projectPath.value, kind); status.value = `已添加：${folder}`; } catch (error) { showError(error); } }
+async function addSupportFiles(kind: "vscode" | "devcontainer") { if (!window.confirm(`此操作会向工程添加 .${kind} 目录，是否继续？`)) return; try { const folder = await window.idfApi.addSupportFiles(projectPath.value, kind, selectedIdfPath.value); status.value = `已添加：${folder}`; } catch (error) { showError(error); } }
 async function installQemu() { if (!window.confirm("将通过 ESP-IDF 工具管理器联网安装 QEMU，是否继续？")) return; try { await window.idfApi.installQemu(projectPath.value, selectedIdfPath.value); } catch (error) { showError(error); } }
 async function installAdf() { if (!window.confirm("将联网下载 ESP-ADF，是否继续？")) return; try { await window.idfApi.installAdf(projectPath.value, selectedIdfPath.value); } catch (error) { showError(error); } }
 async function openInstallManager() { try { await window.idfApi.openInstallManager(selectedIdfPath.value); } catch (error) { showError(error); } }
@@ -1325,8 +1347,11 @@ onMounted(async () => {
     showError(error);
   }
 });
-watch(selectedIdfPath, async (value) => {
+watch(selectedIdfPath, async (value, previous) => {
   if (!value || projectContextSwitching.value) return;
+  if (previous && portablePathKey(previous) !== portablePathKey(value) && /^(?:[A-Za-z]:[\\/]|\/)/.test(openOcdConfig.value)) {
+    openOcdConfig.value = `board/${target.value || "esp32"}-builtin.cfg`;
+  }
   const generation = projectGeneration;
   const selected = projectPath.value;
   try {
@@ -1386,7 +1411,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-frame">
     <header class="topbar">
-          <div class="brand"><div class="brand-mark">IDF</div><div class="brand-copy"><h1>ESP-IDF 工具箱</h1><p>工程与设备工作台 <small class="app-version">v0.8.10</small></p></div></div>
+          <div class="brand"><div class="brand-mark">IDF</div><div class="brand-copy"><h1>ESP-IDF 工具箱</h1><p>工程与设备工作台 <small class="app-version">v0.8.11</small></p></div></div>
       <div class="breadcrumbs"><span>当前工程</span><i class="codicon codicon-chevron-right" /><strong>{{ currentProjectName }}</strong><span>/</span><b>{{ activeWorkspace === 'registry' ? '组件注册表' : '工作台' }}</b></div>
       <div class="top-actions"><div class="top-status"><i :class="['codicon', ready ? 'codicon-pass-filled' : 'codicon-warning']" /><span>{{ status }}</span></div><button class="top-icon-button" aria-label="高级工具" title="高级工具" @click="advancedVisible = true"><i class="codicon codicon-tools" /></button></div>
     </header>
@@ -1463,7 +1488,7 @@ onBeforeUnmount(() => {
         <section class="inspect-group">
           <h3>Development</h3>
           <div class="field"><label for="idf-version">ESP-IDF 版本</label><select id="idf-version" v-model="selectedIdfPath"><option value="" disabled>选择 ESP-IDF</option><option v-for="setup in setups" :key="setup.id" :value="setup.idfPath">v{{ setup.version }}{{ setup.valid ? '' : '（不完整）' }}</option></select></div>
-          <div class="field"><label>安装目录</label><div class="field-value path-value" :title="selectedIdfPath">{{ selectedIdfPath || '尚未选择' }}</div></div>
+          <div class="field"><label>ESP-IDF 目录</label><div class="field-value path-value" :title="selectedIdfPath">{{ selectedIdfPath || '尚未选择' }}</div><small v-if="selectedSetup" class="field-hint" :title="selectedSetup.toolsPath">工具目录：{{ selectedSetup.toolsPath }}</small><small v-if="selectedSetup" class="field-hint" :title="selectedSetup.pythonPath">Python：{{ selectedSetup.pythonPath || '未找到，请重新选择安装目录并指定 IDF_TOOLS_PATH' }}</small></div>
           <button class="inspector-action" @click="chooseIdf"><i class="codicon codicon-folder-opened" />选择其他安装目录</button>
         </section>
         <section class="inspect-group">
