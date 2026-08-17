@@ -1,0 +1,31 @@
+Third-Party Notices
+===================
+
+Espressif VS Code ESP-IDF Extension
+-----------------------------------
+The application includes adapted information architecture and the original
+compiled Webview UI bundles from Espressif's VS Code ESP-IDF Extension 2.1.0,
+including the partition table, NVS, size analysis, CMake, project configuration,
+new project, troubleshooting, image, tracing, SystemView and welcome interfaces.
+
+Project: https://github.com/espressif/vscode-esp-idf-extension
+Publisher: Espressif Systems
+License: Apache License 2.0
+
+This application uses an independently implemented Vue interface with modified
+visual styling, larger typography, Chinese controls, and standalone Electron
+integration. The upstream project and its authors do not endorse this software.
+
+The Apache License 2.0 text is included at:
+LICENSES/Apache-2.0.txt
+
+Visual Studio Code Codicons
+---------------------------
+The interface uses the Codicons icon font distributed by Microsoft as part of
+the Visual Studio Code icon library.
+
+Project: https://github.com/microsoft/vscode-codicons
+Copyright: Microsoft Corporation
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+License text: https://creativecommons.org/licenses/by/4.0/legalcode

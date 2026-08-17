@@ -1,0 +1,69 @@
+{
+  "name": "idf-toolbox",
+  "version": "0.8.10",
+  "private": true,
+  "description": "独立的 ESP-IDF 项目、构建、烧录与串口管理工具",
+  "author": "luocuiyu",
+  "license": "MIT",
+  "homepage": "https://github.com/luocuiyu/ESP-IDF-Toolbox#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luocuiyu/ESP-IDF-Toolbox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/luocuiyu/ESP-IDF-Toolbox/issues"
+  },
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
+    "dev:electron": "wait-on tcp:5173 && tsc -p electron/tsconfig.json && set VITE_DEV_SERVER_URL=http://localhost:5173&& electron .",
+    "build": "vue-tsc --noEmit && vite build --configLoader runner && tsc -p electron/tsconfig.json",
+    "dist": "npm run build && electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
+    "@vscode/codicons": "^0.0.46-24",
+    "serialport": "^13.0.0",
+    "vue": "^3.5.18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "concurrently": "^9.2.0",
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.6",
+    "vue-tsc": "^3.0.4",
+    "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "local.idftoolbox.app",
+    "productName": "ESP-IDF 工具箱",
+    "directories": {
+      "output": "../../outputs"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "LICENSE",
+      "LICENSES/**/*",
+      "THIRD-PARTY-NOTICES.txt",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@serialport/**/*",
+      "node_modules/serialport/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "LICENSES/Apache-2.0.txt",
+        "to": "THIRD-PARTY-LICENSES/Espressif-ESP-IDF-Extension-LICENSE.txt"
+      }
+    ],
+    "win": {
+      "artifactName": "ESP-IDF-Toolbox-${version}-portable.${ext}"
+    }
+  }
+}

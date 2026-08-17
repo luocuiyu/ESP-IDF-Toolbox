@@ -1,0 +1,21 @@
+node_modules/
+dist/
+dist-electron/
+.npm-cache/
+.layout-check-data/
+audit/
+scratch/
+test terminal/
+design-qa.md
+
+.env
+.env.*
+*.log
+*.tmp
+builder-debug.yml
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
