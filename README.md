@@ -1,30 +1,72 @@
-# ESP-IDF Toolbox
+<div align="center">
+  <img src="build/icon.png" width="112" alt="ESP-IDF 工具箱图标" />
+  <h1>ESP-IDF 工具箱｜ESP-IDF Toolbox</h1>
+  <p><strong>把 ESP-IDF 的工程、构建、烧录、配置与串口工作流集中到一个无需 VS Code 的 Windows 桌面应用。</strong></p>
+  <p>自动识别本机 ESP-IDF 环境，支持 UART、JTAG、DFU、图形化 SDK 配置、分区表、组件注册表和多设备串口监视。</p>
 
-一款面向 Windows 的独立 ESP-IDF 图形工具箱，将常用的工程、构建、烧录、串口监视和配置功能集中在一个中文桌面应用中。无需依赖 VS Code 即可使用。
+  [![Release](https://img.shields.io/github/v/release/luocuiyu/ESP-IDF-Toolbox?style=flat-square&color=0f8b8d)](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest)
+  [![Downloads](https://img.shields.io/github/downloads/luocuiyu/ESP-IDF-Toolbox/total?style=flat-square)](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases)
+  [![License](https://img.shields.io/github/license/luocuiyu/ESP-IDF-Toolbox?style=flat-square)](LICENSE)
+  ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows)
+  ![Electron](https://img.shields.io/badge/Electron-37-47848F?style=flat-square&logo=electron)
 
-> 本项目不是 Espressif 官方产品，也不代表 Espressif Systems。ESP-IDF、相关工具及部分 Webview 界面的版权归各自权利人所有。
+  [下载最新版](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest) · [查看 v0.8.12](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/tag/v0.8.12) · [提交问题](https://github.com/luocuiyu/ESP-IDF-Toolbox/issues)
+</div>
 
-## 主要功能
+> [!IMPORTANT]
+> 本项目是独立社区工具，不是 Espressif 官方产品，也不代表 Espressif Systems。ESP-IDF、相关工具及部分 Webview 界面的版权归各自权利人所有。
 
-- 自动发现或手动选择 ESP-IDF 安装目录
-- 打开、创建和切换 ESP-IDF 工程
-- 选择目标芯片并运行构建、完整清理和重新配置
-- UART、JTAG 和 DFU 烧录工作流
-- 多实例运行，分别操作不同工程和设备
-- 串口监视、发送文本或十六进制数据、保留历史输出
-- 图形化 SDK 配置编辑器与字符版 `menuconfig`
-- 分区表、NVS、固件大小分析和其他 Espressif 工具界面
-- ESP Component Registry 浏览与 `idf.py add-dependency` 日志
-- 任务停止、彩色日志、完成提示音和环境诊断
+## v0.8.12 重点更新
+
+- 新增标准 Windows `Setup.exe` 安装向导，可选择安装目录并创建桌面、开始菜单快捷方式。
+- 新版安装包可以直接覆盖旧版安装，无需先卸载，软件配置会继续保留。
+- 安装程序、应用程序和快捷方式统一使用 ESP32 图标。
+- 移除开发电脑固定路径，换电脑、盘符、ESP-IDF 版本或安装目录后会重新发现并验证环境。
+- 提供 `.blockmap` 与 `latest.yml`，为后续应用内增量更新保留兼容格式。
+
+## 为什么需要它？
+
+ESP-IDF 的完整工作流通常分散在终端命令、串口工具和 VS Code 扩展页面中。工具箱将常用入口收敛到一个独立窗口：
+
+```mermaid
+flowchart LR
+    A["打开 ESP-IDF 工程"] --> B["自动匹配 IDF 与 Python"]
+    B --> C["选择目标芯片与烧录方式"]
+    C --> D["构建 / 烧录 / 监视"]
+    B --> E["SDK 配置 / menuconfig"]
+    B --> F["分区表 / 组件注册表 / 固件分析"]
+```
+
+## 功能一览
+
+| 模块 | 能力 |
+| --- | --- |
+| 开发环境 | 自动读取官方安装记录、`IDF_PATH`、`IDF_TOOLS_PATH`，也可手动选择任意安装目录 |
+| 工程管理 | 打开、创建、切换工程；每个工程独立保存目标芯片、端口、烧录方式和配置 |
+| 构建任务 | 构建、完整清理、重新配置、停止任务、彩色错误/警告/成功日志和完成提示音 |
+| 固件烧录 | UART、USB-JTAG/OpenOCD 和 DFU；支持构建、烧录、监视完整流程 |
+| 串口监视 | 多端口会话、日志保留、文本/HEX 发送、波特率选择和停止后查看历史输出 |
+| SDK 配置 | 图形化配置编辑器、即时依赖联动、原始键值模式和字符版 `menuconfig` |
+| 工程工具 | 分区表、NVS、固件大小分析、环境诊断、OpenOCD、GDB 和 QEMU 入口 |
+| 组件管理 | 浏览 ESP Component Registry，添加依赖并在应用内查看完整执行日志 |
+| 多实例 | 同时打开多个工具箱窗口，分别操作不同工程和不同开发板 |
 
 ## 下载
 
-请前往 [Releases](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases) 下载：
+请前往 [Releases](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest) 下载：
 
 - `Setup.exe`：推荐的 Windows 安装版，可选择安装目录，并创建桌面和开始菜单快捷方式
 - `portable.exe`：无需安装的 Windows 便携单文件版（按需提供）
 
-安装版支持中英文安装向导；已经安装旧版本时，可以直接运行新版安装包覆盖升级。建议始终使用最新版本。
+安装步骤：
+
+1. 下载最新的 `ESP-IDF-Toolbox-<版本>-Setup.exe`。
+2. 运行中英文安装向导并选择安装目录。
+3. 安装完成后，从桌面或开始菜单启动“ESP-IDF 工具箱”。
+
+已经安装旧版本时，直接运行新版 Setup 覆盖升级即可，不需要先卸载；工程配置和软件设置不会因覆盖升级而清除。
+
+当前社区版本没有受信任机构签发的 Authenticode 代码签名证书，因此 Windows SmartScreen 可能显示“发布者未知”。请只从本仓库 Release 下载，并通过 Release 页面提供的 SHA-256 校验文件。
 
 ## 使用要求
 
