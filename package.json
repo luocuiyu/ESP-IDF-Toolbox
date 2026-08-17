@@ -1,6 +1,6 @@
 {
   "name": "idf-toolbox",
-  "version": "0.8.11",
+  "version": "0.8.12",
   "private": true,
   "description": "独立的 ESP-IDF 项目、构建、烧录与串口管理工具",
   "author": "luocuiyu",
@@ -19,7 +19,8 @@
     "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
     "dev:electron": "wait-on tcp:5173 && tsc -p electron/tsconfig.json && set VITE_DEV_SERVER_URL=http://localhost:5173&& electron .",
     "build": "vue-tsc --noEmit && vite build --configLoader runner && tsc -p electron/tsconfig.json",
-    "dist": "npm run build && electron-builder --win portable --x64"
+    "dist": "npm run build && electron-builder --win nsis --x64",
+    "dist:portable": "npm run build && electron-builder --win portable --x64 -c.artifactName=ESP-IDF-Toolbox-${version}-portable.${ext}"
   },
   "dependencies": {
     "@serialport/parser-readline": "^13.0.0",
@@ -41,9 +42,18 @@
   "build": {
     "appId": "local.idftoolbox.app",
     "productName": "ESP-IDF 工具箱",
+    "copyright": "Copyright © 2026 luocuiyu",
     "directories": {
       "output": "release"
     },
+    "artifactName": "ESP-IDF-Toolbox-${version}-Setup.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "luocuiyu",
+        "repo": "ESP-IDF-Toolbox"
+      }
+    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -63,7 +73,25 @@
       }
     ],
     "win": {
-      "artifactName": "ESP-IDF-Toolbox-${version}-portable.${ext}"
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ESP-IDF 工具箱",
+      "deleteAppDataOnUninstall": false,
+      "multiLanguageInstaller": true,
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "displayLanguageSelector": true
     }
   }
 }

@@ -1411,7 +1411,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-frame">
     <header class="topbar">
-          <div class="brand"><div class="brand-mark">IDF</div><div class="brand-copy"><h1>ESP-IDF 工具箱</h1><p>工程与设备工作台 <small class="app-version">v0.8.11</small></p></div></div>
+          <div class="brand"><div class="brand-mark">IDF</div><div class="brand-copy"><h1>ESP-IDF 工具箱</h1><p>工程与设备工作台 <small class="app-version">v0.8.12</small></p></div></div>
       <div class="breadcrumbs"><span>当前工程</span><i class="codicon codicon-chevron-right" /><strong>{{ currentProjectName }}</strong><span>/</span><b>{{ activeWorkspace === 'registry' ? '组件注册表' : '工作台' }}</b></div>
       <div class="top-actions"><div class="top-status"><i :class="['codicon', ready ? 'codicon-pass-filled' : 'codicon-warning']" /><span>{{ status }}</span></div><button class="top-icon-button" aria-label="高级工具" title="高级工具" @click="advancedVisible = true"><i class="codicon codicon-tools" /></button></div>
     </header>

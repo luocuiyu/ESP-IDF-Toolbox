@@ -21,10 +21,10 @@
 
 请前往 [Releases](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases) 下载：
 
-- `portable.exe`：Windows 便携单文件版
-- `folder.zip`：解压后直接运行的文件夹版
+- `Setup.exe`：推荐的 Windows 安装版，可选择安装目录，并创建桌面和开始菜单快捷方式
+- `portable.exe`：无需安装的 Windows 便携单文件版（按需提供）
 
-建议优先使用最新版本。历史版本仅用于回溯和兼容性测试。
+安装版支持中英文安装向导；已经安装旧版本时，可以直接运行新版安装包覆盖升级。建议始终使用最新版本。
 
 ## 使用要求
 
@@ -62,10 +62,16 @@ npm run dev
 npm run build
 ```
 
-生成 Windows x64 便携版：
+生成 Windows x64 安装包：
 
 ```powershell
 npm run dist
+```
+
+按需生成便携单文件版：
+
+```powershell
+npm run dist:portable
 ```
 
 ESP-IDF 由用户单独安装，本仓库不会捆绑 ESP-IDF 工具链。
