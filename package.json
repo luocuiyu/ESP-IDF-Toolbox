@@ -1,6 +1,6 @@
 {
   "name": "idf-toolbox",
-  "version": "0.8.12",
+  "version": "0.9.0",
   "private": true,
   "description": "独立的 ESP-IDF 项目、构建、烧录与串口管理工具",
   "author": "luocuiyu",
@@ -19,12 +19,14 @@
     "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
     "dev:electron": "wait-on tcp:5173 && tsc -p electron/tsconfig.json && set VITE_DEV_SERVER_URL=http://localhost:5173&& electron .",
     "build": "vue-tsc --noEmit && vite build --configLoader runner && tsc -p electron/tsconfig.json",
+    "test:update": "npm run build && node --test tests/update-utils.test.mjs",
     "dist": "npm run build && electron-builder --win nsis --x64",
     "dist:portable": "npm run build && electron-builder --win portable --x64 -c.artifactName=ESP-IDF-Toolbox-${version}-portable.${ext}"
   },
   "dependencies": {
     "@serialport/parser-readline": "^13.0.0",
     "@vscode/codicons": "^0.0.46-24",
+    "electron-updater": "^6.8.9",
     "serialport": "^13.0.0",
     "vue": "^3.5.18"
   },
@@ -32,7 +34,7 @@
     "@types/node": "^22.15.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "concurrently": "^9.2.0",
-    "electron": "^37.2.3",
+    "electron": "^43.4.0",
     "electron-builder": "^26.0.12",
     "typescript": "^5.8.3",
     "vite": "^7.0.6",
@@ -40,6 +42,7 @@
     "wait-on": "^8.0.4"
   },
   "build": {
+    "electronUpdaterCompatibility": ">= 2.16",
     "appId": "local.idftoolbox.app",
     "productName": "ESP-IDF 工具箱",
     "copyright": "Copyright © 2026 luocuiyu",

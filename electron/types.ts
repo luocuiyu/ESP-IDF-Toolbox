@@ -47,6 +47,22 @@ export interface AppSettings {
   manualIdfPaths?: string[];
 }
 
+export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error" | "unsupported";
+
+export interface AppUpdateState {
+  phase: UpdatePhase;
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+  etaSeconds?: number;
+  message?: string;
+  error?: string;
+  lastAction?: "check" | "download";
+}
+
 export interface AddComponentDependencyRequest {
   projectPath: string;
   idfPath: string;

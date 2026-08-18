@@ -92,6 +92,21 @@ interface KconfigState {
   errors?: string[];
 }
 
+type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error" | "unsupported";
+interface AppUpdateState {
+  phase: UpdatePhase;
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+  etaSeconds?: number;
+  message?: string;
+  error?: string;
+  lastAction?: "check" | "download";
+}
+
 interface Window {
   idfApi: {
     discoverIdf(): Promise<IdfSetup[]>;
@@ -138,8 +153,16 @@ interface Window {
     writeSerial(port: string, data: string, mode: "text" | "hex"): Promise<boolean>;
     saveLog(content: string): Promise<boolean>;
     playCompletionSound(): Promise<boolean>;
+    getUpdateState(): Promise<AppUpdateState>;
+    checkForUpdates(): Promise<AppUpdateState>;
+    downloadUpdate(): Promise<AppUpdateState>;
+    retryUpdate(): Promise<AppUpdateState>;
+    installUpdate(): Promise<boolean>;
+    openManualUpdate(): Promise<void>;
+    copyUpdateError(): Promise<boolean>;
     onTaskOutput(callback: (data: { stream: string; text: string }) => void): () => void;
     onTaskState(callback: (data: { running: boolean; code?: number; action?: string }) => void): () => void;
     onSerialData(callback: (data: { type: string; port?: string; data?: string; message?: string }) => void): () => void;
+    onUpdateState(callback: (state: AppUpdateState) => void): () => void;
   };
 }

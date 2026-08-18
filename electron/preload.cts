@@ -58,6 +58,13 @@ contextBridge.exposeInMainWorld("idfApi", {
   writeSerial: (port: string, data: string, mode: "text" | "hex") => ipcRenderer.invoke("serial:write", port, data, mode),
   saveLog: (content: string) => ipcRenderer.invoke("log:save", content),
   playCompletionSound: () => ipcRenderer.invoke("notification:completion-sound"),
+  getUpdateState: () => ipcRenderer.invoke("update:get-state"),
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  retryUpdate: () => ipcRenderer.invoke("update:retry"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  openManualUpdate: () => ipcRenderer.invoke("update:open-manual"),
+  copyUpdateError: () => ipcRenderer.invoke("update:copy-error"),
   onTaskOutput: (callback: (data: { stream: string; text: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: { stream: string; text: string }) => callback(data);
     ipcRenderer.on("task:output", listener);
@@ -72,5 +79,10 @@ contextBridge.exposeInMainWorld("idfApi", {
     const listener = (_event: Electron.IpcRendererEvent, data: { type: string; port?: string; data?: string; message?: string }) => callback(data);
     ipcRenderer.on("serial:data", listener);
     return () => ipcRenderer.removeListener("serial:data", listener);
+  },
+  onUpdateState: (callback: (state: import("./types.js").AppUpdateState) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: import("./types.js").AppUpdateState) => callback(state);
+    ipcRenderer.on("update:state", listener);
+    return () => ipcRenderer.removeListener("update:state", listener);
   }
 });
