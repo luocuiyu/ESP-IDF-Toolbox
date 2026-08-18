@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell, type IpcMainInvokeEvent } from "electron";
+import electronUpdater, { type ProgressInfo, type UpdateInfo } from "electron-updater";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -6,7 +7,8 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SerialPort } from "serialport";
-import type { AddComponentDependencyRequest, AppSettings, CreateProjectFromExampleRequest, DoctorCheck, IdfSetup, JtagDevice, KconfigNode, KconfigState, KconfigValue, ProjectSettings, SdkconfigEntry, TaskRequest, ToolCapabilities } from "./types.js";
+import type { AddComponentDependencyRequest, AppSettings, AppUpdateState, CreateProjectFromExampleRequest, DoctorCheck, IdfSetup, JtagDevice, KconfigNode, KconfigState, KconfigValue, ProjectSettings, SdkconfigEntry, TaskRequest, ToolCapabilities } from "./types.js";
+import { normalizeUpdateProgress, retryShouldDownload } from "./update-utils.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 if (process.env.IDF_TOOLBOX_SOFTWARE_RENDERING === "1") app.disableHardwareAcceleration();
@@ -15,9 +17,191 @@ let runningTask: ChildProcessWithoutNullStreams | null = null;
 let runningTaskAction = "";
 type MonitorSession = { port: SerialPort; baud: number; wanted: boolean; reconnectTimer: NodeJS.Timeout | null };
 const monitorSessions = new Map<string, MonitorSession>();
+const manualUpdateUrl = "https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest";
+const { autoUpdater } = electronUpdater;
+let updaterInitialized = false;
+let updateOperation: Promise<AppUpdateState> | null = null;
+let updateState: AppUpdateState = { phase: "idle", currentVersion: app.getVersion(), message: "尚未检查更新" };
 
 function send(channel: string, payload: unknown) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+function updateTaskbarProgress() {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) return;
+  if (updateState.phase === "checking") {
+    window.setProgressBar(2, { mode: "indeterminate" });
+  } else if (updateState.phase === "downloading") {
+    const progress = Math.max(0, Math.min(1, (updateState.percent || 0) / 100));
+    window.setProgressBar(progress, { mode: "normal" });
+  } else if (updateState.phase === "error" && updateState.lastAction === "download") {
+    window.setProgressBar(1, { mode: "error" });
+  } else {
+    window.setProgressBar(-1);
+  }
+}
+
+function publishUpdateState(state: AppUpdateState) {
+  updateState = state;
+  updateTaskbarProgress();
+  send("update:state", updateState);
+  return updateState;
+}
+
+function updateErrorText(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error || "未知更新错误");
+  return raw.replace(/^Error:\s*/i, "").trim() || "未知更新错误";
+}
+
+function recordUpdateError(error: unknown, lastAction: "check" | "download" = updateState.lastAction || "check") {
+  const message = updateErrorText(error);
+  diagnosticLog(`updater ${lastAction} failed: ${message}`);
+  return publishUpdateState({
+    phase: "error",
+    currentVersion: app.getVersion(),
+    availableVersion: updateState.availableVersion,
+    message: lastAction === "download" ? "更新下载失败" : "检查更新失败",
+    error: message,
+    lastAction
+  });
+}
+
+function notifyUpdateDownloaded(info: UpdateInfo) {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({
+    title: "ESP-IDF 工具箱更新已下载",
+    body: `v${info.version} 已准备好，返回工具箱即可重启并安装。`
+  });
+  notification.on("click", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+  notification.show();
+}
+
+function initializeUpdater() {
+  if (updaterInitialized) return;
+  updaterInitialized = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.fullChangelog = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    publishUpdateState({ phase: "checking", currentVersion: app.getVersion(), message: "正在检查 GitHub 上的新版本…", lastAction: "check" });
+  });
+  autoUpdater.on("update-available", (info) => {
+    publishUpdateState({
+      phase: "available",
+      currentVersion: app.getVersion(),
+      availableVersion: info.version,
+      message: `发现新版本 v${info.version}`,
+      lastAction: "check"
+    });
+  });
+  autoUpdater.on("update-not-available", () => {
+    publishUpdateState({ phase: "up-to-date", currentVersion: app.getVersion(), message: "当前已经是最新版本", lastAction: "check" });
+  });
+  autoUpdater.on("download-progress", (progress: ProgressInfo) => {
+    const { bytesPerSecond, transferred, total, percent, etaSeconds } = normalizeUpdateProgress(progress);
+    publishUpdateState({
+      phase: "downloading",
+      currentVersion: app.getVersion(),
+      availableVersion: updateState.availableVersion,
+      percent,
+      transferred,
+      total,
+      bytesPerSecond,
+      etaSeconds,
+      message: "正在下载更新",
+      lastAction: "download"
+    });
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    publishUpdateState({
+      phase: "downloaded",
+      currentVersion: app.getVersion(),
+      availableVersion: info.version,
+      percent: 100,
+      message: `v${info.version} 已下载完成`,
+      lastAction: "download"
+    });
+    notifyUpdateDownloaded(info);
+  });
+  autoUpdater.on("update-cancelled", () => {
+    recordUpdateError("更新下载已取消", "download");
+  });
+  autoUpdater.on("error", (error) => {
+    const action = updateState.phase === "downloading" || updateState.lastAction === "download" ? "download" : "check";
+    recordUpdateError(error, action);
+  });
+}
+
+function runUpdateOperation(operation: () => Promise<AppUpdateState>) {
+  if (updateOperation) return updateOperation;
+  const current = operation().finally(() => {
+    if (updateOperation === current) updateOperation = null;
+  });
+  updateOperation = current;
+  return current;
+}
+
+async function checkForApplicationUpdate() {
+  if (!app.isPackaged) {
+    return publishUpdateState({
+      phase: "unsupported",
+      currentVersion: app.getVersion(),
+      message: "开发运行模式不执行自动更新，请安装 Setup 版本后测试",
+      lastAction: "check"
+    });
+  }
+  if (updateState.phase === "downloading") return updateState;
+  initializeUpdater();
+  return runUpdateOperation(async () => {
+    publishUpdateState({ phase: "checking", currentVersion: app.getVersion(), message: "正在检查 GitHub 上的新版本…", lastAction: "check" });
+    try {
+      await autoUpdater.checkForUpdates();
+      return updateState;
+    } catch (error) {
+      return recordUpdateError(error, "check");
+    }
+  });
+}
+
+async function downloadApplicationUpdate() {
+  if (!app.isPackaged) return checkForApplicationUpdate();
+  initializeUpdater();
+  if (updateState.phase === "downloaded" || updateState.phase === "downloading") return updateState;
+  if (!updateState.availableVersion) {
+    return recordUpdateError("尚未发现可下载的新版本，请先检查更新", "check");
+  }
+  return runUpdateOperation(async () => {
+    publishUpdateState({
+      phase: "downloading",
+      currentVersion: app.getVersion(),
+      availableVersion: updateState.availableVersion,
+      percent: 0,
+      transferred: 0,
+      total: 0,
+      bytesPerSecond: 0,
+      message: "正在连接下载服务器…",
+      lastAction: "download"
+    });
+    try {
+      await autoUpdater.downloadUpdate();
+      return updateState;
+    } catch (error) {
+      return recordUpdateError(error, "download");
+    }
+  });
+}
+
+function retryApplicationUpdate() {
+  return retryShouldDownload(updateState.lastAction, updateState.availableVersion)
+    ? downloadApplicationUpdate()
+    : checkForApplicationUpdate();
 }
 
 function assertNoRunningTask() {
@@ -1382,6 +1566,24 @@ function registerIpc() {
     shell.beep();
     return true;
   });
+  trustedHandle("update:get-state", () => updateState);
+  trustedHandle("update:check", () => checkForApplicationUpdate());
+  trustedHandle("update:download", () => downloadApplicationUpdate());
+  trustedHandle("update:retry", () => retryApplicationUpdate());
+  trustedHandle("update:install", async () => {
+    if (updateState.phase !== "downloaded") throw new Error("更新尚未下载完成");
+    if (runningTask) throw new Error("当前还有工程任务正在运行，请等待完成或先停止任务");
+    await closeMonitor();
+    closeKconfigSession();
+    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    return true;
+  });
+  trustedHandle("update:open-manual", () => shell.openExternal(manualUpdateUrl));
+  trustedHandle("update:copy-error", () => {
+    if (!updateState.error) return false;
+    clipboard.writeText(updateState.error);
+    return true;
+  });
   trustedHandle("tool:install-qemu", (_event, projectPath: string, idfPath: string) => {
     const setup = inspectSetup(idfPath);
     return openActivatedTerminal(setup, projectPath, "ESP-IDF QEMU Installer", [`"${setup.pythonPath}" "${path.join(idfPath, "tools", "idf_tools.py")}" install qemu-xtensa qemu-riscv32`], true);
@@ -1478,6 +1680,10 @@ async function createWindow() {
     closeKconfigSession();
   });
   mainWindow.webContents.once("destroyed", () => closeKconfigSession());
+  mainWindow.webContents.once("did-finish-load", () => {
+    updateTaskbarProgress();
+    send("update:state", updateState);
+  });
   mainWindow.once("closed", () => {
     closeKconfigSession();
     mainWindow = null;

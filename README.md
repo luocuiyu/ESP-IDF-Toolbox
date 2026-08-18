@@ -8,21 +8,21 @@
   [![Downloads](https://img.shields.io/github/downloads/luocuiyu/ESP-IDF-Toolbox/total?style=flat-square)](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases)
   [![License](https://img.shields.io/github/license/luocuiyu/ESP-IDF-Toolbox?style=flat-square)](LICENSE)
   ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows)
-  ![Electron](https://img.shields.io/badge/Electron-37-47848F?style=flat-square&logo=electron)
+  ![Electron](https://img.shields.io/badge/Electron-43-47848F?style=flat-square&logo=electron)
 
-  [下载最新版](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest) · [查看 v0.8.12](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/tag/v0.8.12) · [提交问题](https://github.com/luocuiyu/ESP-IDF-Toolbox/issues)
+  [下载最新版](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest) · [查看 v0.9.0](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/tag/v0.9.0) · [提交问题](https://github.com/luocuiyu/ESP-IDF-Toolbox/issues)
 </div>
 
 > [!IMPORTANT]
 > 本项目是独立社区工具，不是 Espressif 官方产品，也不代表 Espressif Systems。ESP-IDF、相关工具及部分 Webview 界面的版权归各自权利人所有。
 
-## v0.8.12 重点更新
+## v0.9.0 重点更新
 
-- 新增标准 Windows `Setup.exe` 安装向导，可选择安装目录并创建桌面、开始菜单快捷方式。
-- 新版安装包可以直接覆盖旧版安装，无需先卸载，软件配置会继续保留。
-- 安装程序、应用程序和快捷方式统一使用 ESP32 图标。
-- 移除开发电脑固定路径，换电脑、盘符、ESP-IDF 版本或安装目录后会重新发现并验证环境。
-- 提供 `.blockmap` 与 `latest.yml`，为后续应用内增量更新保留兼容格式。
+- 新增完整的应用内更新中心：检查、下载、后台收起、失败重试和重启安装。
+- 下载时显示百分比、已下载/总大小、实时速度和预计剩余时间，并同步到 Windows 任务栏。
+- 下载完成后显示系统通知；失败时可重试、打开 GitHub 手动下载或复制完整错误。
+- 更新状态由 Electron 主进程维护，界面刷新或卡片收起不会丢失下载状态。
+- GitHub 标签发布自动上传 `Setup.exe`、`.blockmap` 和 `latest.yml`，避免遗漏更新元数据。
 
 ## 为什么需要它？
 
@@ -50,6 +50,7 @@ flowchart LR
 | 工程工具 | 分区表、NVS、固件大小分析、环境诊断、OpenOCD、GDB 和 QEMU 入口 |
 | 组件管理 | 浏览 ESP Component Registry，添加依赖并在应用内查看完整执行日志 |
 | 多实例 | 同时打开多个工具箱窗口，分别操作不同工程和不同开发板 |
+| 软件更新 | 应用内下载进度、后台状态、Windows 任务栏进度、系统通知及重启安装 |
 
 ## 下载
 
@@ -64,7 +65,7 @@ flowchart LR
 2. 运行中英文安装向导并选择安装目录。
 3. 安装完成后，从桌面或开始菜单启动“ESP-IDF 工具箱”。
 
-已经安装旧版本时，直接运行新版 Setup 覆盖升级即可，不需要先卸载；工程配置和软件设置不会因覆盖升级而清除。
+首次升级到 v0.9.0 时请手动运行新版 Setup 覆盖安装；之后可直接从左侧“软件更新”下载并安装后续版本。工程配置和软件设置不会因覆盖升级而清除。
 
 当前社区版本没有受信任机构签发的 Authenticode 代码签名证书，因此 Windows SmartScreen 可能显示“发布者未知”。请只从本仓库 Release 下载，并通过 Release 页面提供的 SHA-256 校验文件。
 

@@ -4,6 +4,7 @@ import KconfigEditor from "./components/KconfigEditor.vue";
 import EspressifWebview from "./components/EspressifWebview.vue";
 import ExtensionFeatureCenter from "./components/ExtensionFeatureCenter.vue";
 import ComponentRegistry from "./components/ComponentRegistry.vue";
+import UpdateCenter from "./components/UpdateCenter.vue";
 import "@vscode/codicons/dist/codicon.css";
 import "./kconfig.css";
 
@@ -54,6 +55,8 @@ const autoFollowLog = ref(true);
 const workflowQueue = ref<TaskRequest["action"][]>([]);
 let completionWorkflow: "none" | "build-flash-monitor" = "none";
 const activeWorkspace = ref<"workbench" | "registry">("workbench");
+const updateState = ref<AppUpdateState>({ phase: "idle", currentVersion: "", message: "尚未检查更新" });
+const updateCardOpen = ref(false);
 
 const createVisible = ref(false);
 const advancedVisible = ref(false);
@@ -217,6 +220,16 @@ const sdkRawDirty = computed(() => {
 });
 const capabilityCount = computed(() => Object.values(capabilities.value).filter(Boolean).length);
 const dialogVisible = computed(() => advancedVisible.value || customTaskVisible.value || doctorVisible.value || sdkVisible.value || createVisible.value || partitionVisible.value || nvsVisible.value || sizeVisible.value);
+const updateSidebarLabel = computed(() => {
+  if (updateState.value.phase === "checking") return "正在检查更新";
+  if (updateState.value.phase === "available") return `可更新至 v${updateState.value.availableVersion}`;
+  if (updateState.value.phase === "downloading") return `下载更新 ${Math.round(updateState.value.percent || 0)}%`;
+  if (updateState.value.phase === "downloaded") return "更新已下载完成";
+  if (updateState.value.phase === "up-to-date") return "当前已是最新版";
+  if (updateState.value.phase === "error") return "更新失败，可重试";
+  if (updateState.value.phase === "unsupported") return "仅安装版支持自动更新";
+  return "检查软件更新";
+});
 let dialogReturnFocus: HTMLElement | null = null;
 
 function appendTask(text: string) { taskLog.value += text; scrollLog(); }
@@ -268,6 +281,66 @@ async function playCompletionSound() {
   if (!completionSound.value) return;
   try { await window.idfApi.playCompletionSound(); }
   catch { /* A notification failure must not turn a successful task into a failed task. */ }
+}
+
+function openUpdateCenter() {
+  updateCardOpen.value = true;
+  if (updateState.value.phase === "idle") void checkApplicationUpdate();
+}
+
+async function checkApplicationUpdate() {
+  updateCardOpen.value = true;
+  updateState.value = { phase: "checking", currentVersion: updateState.value.currentVersion, message: "正在检查 GitHub 上的新版本…", lastAction: "check" };
+  try { updateState.value = await window.idfApi.checkForUpdates(); }
+  catch (error) { showError(error); }
+}
+
+async function downloadApplicationUpdate() {
+  updateCardOpen.value = true;
+  updateState.value = {
+    ...updateState.value,
+    phase: "downloading",
+    percent: 0,
+    transferred: 0,
+    total: 0,
+    bytesPerSecond: 0,
+    message: "正在连接下载服务器…",
+    lastAction: "download"
+  };
+  try { updateState.value = await window.idfApi.downloadUpdate(); }
+  catch (error) { showError(error); }
+}
+
+async function retryApplicationUpdate() {
+  updateCardOpen.value = true;
+  const retryingDownload = updateState.value.lastAction === "download" && Boolean(updateState.value.availableVersion);
+  updateState.value = {
+    ...updateState.value,
+    phase: retryingDownload ? "downloading" : "checking",
+    percent: retryingDownload ? 0 : undefined,
+    error: undefined,
+    message: retryingDownload ? "正在重新连接下载服务器…" : "正在重新检查更新…"
+  };
+  try { updateState.value = await window.idfApi.retryUpdate(); }
+  catch (error) { showError(error); }
+}
+
+async function installApplicationUpdate() {
+  if (!window.confirm("工具箱将关闭串口监视并重启安装更新。未保存的 SDK 配置不会保留，是否继续？")) return;
+  try { await window.idfApi.installUpdate(); }
+  catch (error) { showError(error); }
+}
+
+async function openManualUpdate() {
+  try { await window.idfApi.openManualUpdate(); }
+  catch (error) { showError(error); }
+}
+
+async function copyUpdateError() {
+  try {
+    const copied = await window.idfApi.copyUpdateError();
+    status.value = copied ? "更新错误已复制到剪贴板" : "没有可复制的更新错误";
+  } catch (error) { showError(error); }
 }
 
 async function refreshIdf() {
@@ -1252,6 +1325,7 @@ watch(dialogVisible, async (open, wasOpen) => {
 let removeTaskOutput = () => {};
 let removeTaskState = () => {};
 let removeSerialData = () => {};
+let removeUpdateState = () => {};
 onMounted(async () => {
   document.addEventListener("keydown", handleDialogKeydown);
   document.addEventListener("keydown", handleGlobalKeydown);
@@ -1326,7 +1400,12 @@ onMounted(async () => {
     if (event.type === "data" && event.data) appendSerial(port, event.data);
     if (event.message) appendSerial(port, `[${event.type === "error" ? "错误" : "信息"}] ${event.message}\n`);
   });
+  removeUpdateState = window.idfApi.onUpdateState((state) => {
+    updateState.value = state;
+    if (["available", "downloaded", "error"].includes(state.phase)) updateCardOpen.value = true;
+  });
   try {
+    updateState.value = await window.idfApi.getUpdateState();
     projectContextSwitching.value = true;
     const settings = await window.idfApi.loadSettings();
     await refreshIdf();
@@ -1401,6 +1480,7 @@ onBeforeUnmount(() => {
   removeTaskOutput();
   removeTaskState();
   removeSerialData();
+  removeUpdateState();
   invalidateKconfigPreview();
   const sessionId = kconfigSessionId;
   kconfigSessionId = "";
@@ -1411,7 +1491,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-frame">
     <header class="topbar">
-          <div class="brand"><div class="brand-mark">IDF</div><div class="brand-copy"><h1>ESP-IDF 工具箱</h1><p>工程与设备工作台 <small class="app-version">v0.8.12</small></p></div></div>
+          <div class="brand"><div class="brand-mark">IDF</div><div class="brand-copy"><h1>ESP-IDF 工具箱</h1><p>工程与设备工作台 <small class="app-version">{{ updateState.currentVersion ? `v${updateState.currentVersion}` : '' }}</small></p></div></div>
       <div class="breadcrumbs"><span>当前工程</span><i class="codicon codicon-chevron-right" /><strong>{{ currentProjectName }}</strong><span>/</span><b>{{ activeWorkspace === 'registry' ? '组件注册表' : '工作台' }}</b></div>
       <div class="top-actions"><div class="top-status"><i :class="['codicon', ready ? 'codicon-pass-filled' : 'codicon-warning']" /><span>{{ status }}</span></div><button class="top-icon-button" aria-label="高级工具" title="高级工具" @click="advancedVisible = true"><i class="codicon codicon-tools" /></button></div>
     </header>
@@ -1436,6 +1516,12 @@ onBeforeUnmount(() => {
           <button :class="['nav-item', { active: activeWorkspace === 'workbench' && activeLog === 'serial' }]" :aria-current="activeWorkspace === 'workbench' && activeLog === 'serial' ? 'page' : undefined" @click="showWorkbench('serial')"><i class="codicon codicon-plug" /><span>串口监视</span><i class="codicon codicon-chevron-right" /></button>
           <button class="nav-item" @click="advancedVisible = true"><i class="codicon codicon-tools" /><span>高级工具</span><i class="codicon codicon-chevron-right" /></button>
         </nav>
+        <button :class="['sidebar-update', `phase-${updateState.phase}`]" :title="updateSidebarLabel" @click="openUpdateCenter">
+          <i :class="['codicon', updateState.phase === 'error' ? 'codicon-error' : updateState.phase === 'downloaded' ? 'codicon-pass-filled' : 'codicon-cloud-download']" />
+          <span><strong>软件更新</strong><small>{{ updateSidebarLabel }}</small></span>
+          <b v-if="updateState.phase === 'downloading'">{{ Math.round(updateState.percent || 0) }}%</b>
+          <i v-else class="codicon codicon-chevron-right" />
+        </button>
         <div class="sidebar-actions"><button :disabled="projectContextSwitching || taskRunning" @click="showCreateProject"><i class="codicon codicon-new-folder" />新建工程</button></div>
         <div class="sidebar-note"><strong>ESP-IDF {{ selectedSetup ? `v${selectedSetup.version}` : '未选择' }}</strong><span>{{ target.toUpperCase() }} · {{ buildDir }}</span><span>{{ projectPath ? '配置仅属于当前工程' : '等待打开工程' }}</span></div>
       </aside>
@@ -1561,6 +1647,7 @@ onBeforeUnmount(() => {
 
     <div v-if="createVisible" class="modal-backdrop" @click.self="createVisible = false"><div class="modal" role="dialog" aria-modal="true" aria-label="新建 ESP-IDF 工程" tabindex="-1"><div class="modal-head"><div><h2>新建 ESP-IDF 工程</h2><p>选择空白模板或官方示例</p></div><button aria-label="关闭" title="关闭" @click="createVisible = false"><i class="codicon codicon-close" /></button></div><label for="new-project-name">工程名称</label><input id="new-project-name" v-model="projectName" /><span class="form-label">工程类型</span><div class="segmented"><button :aria-pressed="projectKind === 'blank'" :class="{ active: projectKind === 'blank' }" @click="projectKind = 'blank'">最小空白工程</button><button :aria-pressed="projectKind === 'example'" :class="{ active: projectKind === 'example' }" @click="projectKind = 'example'">ESP-IDF 官方示例</button></div><template v-if="projectKind === 'example'"><label for="new-project-example">选择示例</label><select id="new-project-example" v-model="selectedExample"><option v-for="example in examples" :key="example.path" :value="example.path">{{ example.group }} / {{ example.name }}</option></select></template><div class="modal-footer"><button @click="createVisible = false">取消</button><button class="primary" @click="createProject">选择目录并创建</button></div></div></div>
     <div v-if="errorMessage" class="toast" role="alert"><span>{{ errorMessage }}</span><button aria-label="关闭错误提示" title="关闭" @click="errorMessage = ''"><i class="codicon codicon-close" aria-hidden="true" /></button></div>
+    <UpdateCenter v-if="updateCardOpen" :state="updateState" @check="checkApplicationUpdate" @download="downloadApplicationUpdate" @retry="retryApplicationUpdate" @install="installApplicationUpdate" @manual="openManualUpdate" @copy-error="copyUpdateError" @minimize="updateCardOpen = false" @dismiss="updateCardOpen = false" />
     <div v-if="partitionVisible" class="modal-backdrop editor-backdrop"><div class="modal ported-editor-modal" :class="{ 'is-maximized': editorMaximized }" role="dialog" aria-modal="true" aria-label="ESP-IDF 分区表编辑器" tabindex="-1">
       <div class="modal-head"><div><h2>ESP-IDF 分区表编辑器</h2><p>{{ csvEditor.path }}</p></div><div class="editor-window-actions"><span>右下角可调整大小</span><button :aria-label="editorMaximized ? '还原窗口' : '最大化窗口'" :title="editorMaximized ? '还原窗口' : '最大化窗口'" @click="editorMaximized = !editorMaximized"><i :class="['codicon', editorMaximized ? 'codicon-chrome-restore' : 'codicon-chrome-maximize']" /></button><button aria-label="关闭" title="关闭" @click="partitionVisible = false"><i class="codicon codicon-close" /></button></div></div>
       <EspressifWebview bundle="partition_table-bundle.js" :initial-message="csvWebviewMessage" reload-on-request @message="handleCsvEditorMessage" />
