@@ -10,11 +10,17 @@
   ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows)
   ![Electron](https://img.shields.io/badge/Electron-43-47848F?style=flat-square&logo=electron)
 
-  [下载最新版](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest) · [查看 v0.9.0](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/tag/v0.9.0) · [提交问题](https://github.com/luocuiyu/ESP-IDF-Toolbox/issues)
+  [下载最新版](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/latest) · [查看 v0.9.2](https://github.com/luocuiyu/ESP-IDF-Toolbox/releases/tag/v0.9.2) · [提交问题](https://github.com/luocuiyu/ESP-IDF-Toolbox/issues)
 </div>
 
 > [!IMPORTANT]
 > 本项目是独立社区工具，不是 Espressif 官方产品，也不代表 Espressif Systems。ESP-IDF、相关工具及部分 Webview 界面的版权归各自权利人所有。
+
+## v0.9.2 重点更新
+
+- 普通新建工程和组件示例工程创建成功后，都会询问是否立即打开工程文件夹。
+- 选择“打开文件夹”后由操作系统打开实际工程目录；选择“暂不打开”则继续留在工具箱。
+- 只有工程创建并验证成功后才显示询问，取消目录选择或创建失败时不会误弹。
 
 ## v0.9.0 重点更新
 

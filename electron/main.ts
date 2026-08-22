@@ -1131,6 +1131,25 @@ function validateProject(projectPath: string) {
   }
 }
 
+async function promptToOpenCreatedProjectFolder(projectPath: string) {
+  const resolvedProjectPath = path.resolve(projectPath);
+  if (!validateProject(resolvedProjectPath)) throw new Error("新建工程目录无效，无法打开文件夹");
+  const answer = await dialog.showMessageBox(mainWindow!, {
+    type: "question",
+    title: "工程创建成功",
+    message: "工程已创建，是否打开工程文件夹？",
+    detail: resolvedProjectPath,
+    buttons: ["打开文件夹", "暂不打开"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  });
+  if (answer.response !== 0) return false;
+  const openError = await shell.openPath(resolvedProjectPath);
+  if (openError) throw new Error(`无法打开工程文件夹：${openError}`);
+  return true;
+}
+
 function listExamples(idfPath: string) {
   const root = path.join(idfPath, "examples");
   const results: Array<{ name: string; path: string; group: string }> = [];
@@ -1493,6 +1512,7 @@ function registerIpc() {
       "component-example"
     );
     if (!validateProject(destination)) throw new Error("命令已结束，但目标目录中没有生成有效的 ESP-IDF 工程");
+    await promptToOpenCreatedProjectFolder(destination);
     return destination;
   });
   trustedHandle("project:create", async (_event, args: { name: string; examplePath?: string }) => {
@@ -1505,9 +1525,12 @@ function registerIpc() {
       if (existsSync(projectPath) && readdirSync(projectPath).length > 0) throw new Error("目标工程目录已存在且不为空");
       mkdirSync(projectPath, { recursive: true });
       cpSync(args.examplePath, projectPath, { recursive: true });
+      await promptToOpenCreatedProjectFolder(projectPath);
       return projectPath;
     }
-    return createBlankProject(result.filePaths[0], args.name);
+    createBlankProject(result.filePaths[0], args.name);
+    await promptToOpenCreatedProjectFolder(projectPath);
+    return projectPath;
   });
   trustedHandle("settings:load", () => loadSettings());
   trustedHandle("settings:save-project", (_event, projectPath: string, projectSettings: ProjectSettings) => {
